@@ -26,7 +26,6 @@ const (
 )
 
 func main() {
-	// Подключение к базе данных
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
 
@@ -48,10 +47,8 @@ func main() {
 
 	fmt.Println("Successfully connected to database!")
 
-	// Регистрация обработчиков
 	http.HandleFunc("/api/v0/prices", pricesHandler)
 
-	// Запуск сервера
 	fmt.Println("Server is starting on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
@@ -67,16 +64,13 @@ func pricesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// POST /api/v0/prices - загрузка zip-архива с данными
 func handlePost(w http.ResponseWriter, r *http.Request) {
-	// Парсинг multipart form data
 	err := r.ParseMultipartForm(32 << 20) // 32 MB максимум
 	if err != nil {
 		http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
 		return
 	}
 
-	// Получение файла из формы
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Failed to get file from form", http.StatusBadRequest)
@@ -88,21 +82,18 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Чтение файла в память
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
 		http.Error(w, "Failed to read file", http.StatusBadRequest)
 		return
 	}
 
-	// Открытие zip-архива из памяти
 	zipReader, err := zip.NewReader(bytes.NewReader(fileBytes), int64(len(fileBytes)))
 	if err != nil {
 		http.Error(w, "Failed to read zip archive", http.StatusBadRequest)
 		return
 	}
 
-	// Поиск CSV файла в архиве
 	var csvFile *zip.File
 	for _, f := range zipReader.File {
 		if strings.HasSuffix(f.Name, ".csv") {
@@ -116,7 +107,6 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Открытие CSV файла
 	rc, err := csvFile.Open()
 	if err != nil {
 		http.Error(w, "Failed to open CSV file", http.StatusInternalServerError)
@@ -128,7 +118,6 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Чтение CSV
 	csvReader := csv.NewReader(rc)
 	records, err := csvReader.ReadAll()
 	if err != nil {
@@ -136,13 +125,11 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Пропускаем заголовок, если он есть
 	startIndex := 0
 	if len(records) > 0 && records[0][0] == "id" {
 		startIndex = 1
 	}
 
-	// Запись данных в базу
 	for i := startIndex; i < len(records); i++ {
 		record := records[i]
 		if len(record) != 5 {
@@ -170,7 +157,6 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Подсчёт статистики
 	var totalItems int
 	var totalCategories int
 	var totalPrice float64
@@ -193,7 +179,6 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Формирование ответа
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, err = fmt.Fprintf(w, `{"total_items":%d,"total_categories":%d,"total_price":%.0f}`,
@@ -203,12 +188,9 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GET /api/v0/prices - выгрузка данных в zip-архиве
 func handleGet(w http.ResponseWriter, r *http.Request) {
-	// Логирование запроса
 	log.Printf("GET request from %s", r.RemoteAddr)
 
-	// Получение всех данных из базы
 	rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices ORDER BY id")
 	if err != nil {
 		http.Error(w, "Failed to query database", http.StatusInternalServerError)
@@ -220,7 +202,6 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Создание CSV в памяти
 	var csvBuffer bytes.Buffer
 	csvWriter := csv.NewWriter(&csvBuffer)
 
@@ -254,7 +235,6 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создание zip-архива в памяти
 	var zipBuffer bytes.Buffer
 	zipWriter := zip.NewWriter(&zipBuffer)
 
@@ -276,7 +256,6 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Отправка zip-архива клиенту
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=data.zip")
 	w.WriteHeader(http.StatusOK)

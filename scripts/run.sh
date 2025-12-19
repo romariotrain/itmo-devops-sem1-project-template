@@ -23,7 +23,15 @@ echo "База данных доступна!"
 
 # Сборка и запуск приложения
 echo "Сборка приложения..."
-go build -o server main.go
+if ! go build -o server main.go; then
+    echo "Ошибка в сборке приложения"
+    exit 1
+fi
+
+if [ ! -f "./server" ]; then
+    echo "Файл не создан"
+    exit 1
+fi
 
 echo "Запуск сервера на порту 8080..."
-./server#!/bin/bash
+./server
