@@ -32,7 +32,7 @@ echo "Создание таблицы prices..."
 
 PGPASSWORD='val1dat0r' psql -h localhost -U validator -d project-sem-1 <<EOF
 CREATE TABLE IF NOT EXISTS prices (
-    id VARCHAR(255) PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     category VARCHAR(255) NOT NULL,
     price NUMERIC(10, 2) NOT NULL,

@@ -50,7 +50,10 @@ func main() {
 	http.HandleFunc("/api/v0/prices", pricesHandler)
 
 	fmt.Println("Server is starting on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	err = http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Printf("Server error: %v", err)
+	}
 }
 
 func pricesHandler(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +68,7 @@ func pricesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePost(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseMultipartForm(32 << 20) // 32 MB максимум
+	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
 		http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
 		return
@@ -130,13 +133,20 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		startIndex = 1
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
 	for i := startIndex; i < len(records); i++ {
 		record := records[i]
 		if len(record) != 5 {
-			continue
+			http.Error(w, "Invalid CSV format", http.StatusBadRequest)
+			return
 		}
 
-		id := record[0]
 		name := record[1]
 		category := record[2]
 		priceStr := record[3]
@@ -144,40 +154,37 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 
 		price, err := strconv.ParseFloat(priceStr, 64)
 		if err != nil {
-			continue
+			http.Error(w, "Invalid price value", http.StatusBadRequest)
+			return
 		}
 
-		_, err = db.Exec(
-			"INSERT INTO prices (id, name, category, price, create_date) VALUES ($1, $2, $3, $4, $5)",
-			id, name, category, price, createDate,
+		_, err = tx.Exec(
+			"INSERT INTO prices (name, category, price, create_date) VALUES ($1, $2, $3, $4)",
+			name, category, price, createDate,
 		)
 		if err != nil {
-			log.Printf("Failed to insert record: %v", err)
-			continue
+			http.Error(w, "Failed to insert record", http.StatusInternalServerError)
+			return
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		return
 	}
 
 	var totalItems int
 	var totalCategories int
 	var totalPrice float64
 
-	err = db.QueryRow("SELECT COUNT(*) FROM prices").Scan(&totalItems)
-	if err != nil {
-		http.Error(w, "Failed to count items", http.StatusInternalServerError)
-		return
-	}
+	totalItems = len(records) - startIndex
 
-	err = db.QueryRow("SELECT COUNT(DISTINCT category) FROM prices").Scan(&totalCategories)
-	if err != nil {
-		http.Error(w, "Failed to count categories", http.StatusInternalServerError)
-		return
-	}
-
-	err = db.QueryRow("SELECT COALESCE(SUM(price), 0) FROM prices").Scan(&totalPrice)
-	if err != nil {
-		http.Error(w, "Failed to sum prices", http.StatusInternalServerError)
-		return
-	}
+	err = db.QueryRow(`
+    SELECT
+        COUNT(DISTINCT category),
+        COALESCE(SUM(price), 0)
+    FROM prices
+`).Scan(&totalCategories, &totalPrice)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -226,6 +233,10 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 		if err := csvWriter.Write(record); err != nil {
 			log.Printf("Failed to write CSV record: %v", err)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		http.Error(w, "Row iteration error", http.StatusInternalServerError)
+		return
 	}
 
 	csvWriter.Flush()
