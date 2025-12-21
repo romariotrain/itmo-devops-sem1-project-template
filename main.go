@@ -143,8 +143,7 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	for i := startIndex; i < len(records); i++ {
 		record := records[i]
 		if len(record) != 5 {
-			http.Error(w, "Invalid CSV format", http.StatusBadRequest)
-			return
+			continue
 		}
 
 		name := record[1]
@@ -154,8 +153,7 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 
 		price, err := strconv.ParseFloat(priceStr, 64)
 		if err != nil {
-			http.Error(w, "Invalid price value", http.StatusBadRequest)
-			return
+			continue
 		}
 
 		_, err = tx.Exec(
@@ -213,8 +211,9 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 	csvWriter := csv.NewWriter(&csvBuffer)
 
 	for rows.Next() {
-		var id, name, category, createDate string
+		var name, category, createDate string
 		var price float64
+		var id int
 
 		err := rows.Scan(&id, &name, &category, &price, &createDate)
 		if err != nil {
@@ -223,7 +222,6 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 
 		record := []string{
-			id,
 			name,
 			category,
 			fmt.Sprintf("%.0f", price),
